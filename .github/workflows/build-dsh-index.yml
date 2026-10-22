@@ -145,6 +145,9 @@ jobs:
             console.log(JSON.stringify(meta, null, 2));
           '
 
+      - name: 生成 README
+        run: node tools/render-market-readme.js
+
       # 不碰 master，避免和上游每日数据提交打架；产物单独放 market 分支。
       # 用临时仓库推送，绕开 sparse checkout 的工作区限制。
       - name: 发布到 market 分支
@@ -158,8 +161,8 @@ jobs:
             git config http.https://github.com/.extraheader "$auth_header"
           fi
           git checkout -q -b market
-          cp ../public/index.json ../public/conversion-report.json ../public/meta.json .
-          git add index.json conversion-report.json meta.json
+          cp ../public/index.json ../public/conversion-report.json ../public/meta.json ../public/README.md .
+          git add index.json conversion-report.json meta.json README.md
           git commit -q -m "index: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git push -q --force origin market
