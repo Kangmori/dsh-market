@@ -1,0 +1,192 @@
+name: build-dsh-index
+
+# 把上游 2BingLing/dsh-market 每天产出的 data/plugins.json（schemaVersion 2）
+# 转换成 DSH 插件市场能直接读取的 format 1 索引，发布到本仓库的 market 分支。
+#
+# 上游节奏：北京时间 03:00 主采集（UTC 19:00），06:00 兜底补跑（UTC 22:00）。
+# 本任务安排在北京时间 08:30（UTC 00:30），避开上游写入窗口。
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # 推送 market 分支
+
+concurrency:
+  group: build-dsh-index
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_RAW: https://raw.githubusercontent.com/2BingLing/dsh-market/master/data/plugins.json
+  REFERENCE_INDEX: https://awesome-dsh-plugin.com/index.json
+  # 固定版本，避免上游格式升级时静默改变转换结果；DSH 升级后改这里
+  MARKET_INDEX_PKG: "@deepseek-ai/dsh-plugin-market-index@0.2.1-rc.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # 只取工具目录，避开上游每天提交的 48 MiB plugins.json / 26 MiB zh-cache；
+      # filter: blob:none 让 partial clone 按需拉取，checkout 只有几十 KB。
+      - name: Checkout（仅 tools + reference）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            tools
+            reference
+          sparse-checkout-cone-mode: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 拉取上游目录与参考索引
+        run: |
+          mkdir -p work public
+          curl -fsSL --retry 3 --retry-delay 5 "$UPSTREAM_RAW" -o work/plugins.json
+          node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("work/plugins.json", "utf8"));
+            if (d.schemaVersion !== 2 || !Array.isArray(d.plugins)) {
+              console.error("上游 schema 变了：schemaVersion=" + d.schemaVersion);
+              process.exit(1);
+            }
+            const age = (Date.now() - Date.parse(d.generatedAt)) / 3600000;
+            console.log(`上游 generatedAt=${d.generatedAt}（${age.toFixed(1)}h 前），插件 ${d.plugins.length} 条`);
+            if (!(age < 48)) console.log(`::warning::上游数据已 ${age.toFixed(1)} 小时未更新，可能采集管道异常`);
+          '
+          # 参考索引用于反查 npm 包名/版本/分类；拉取失败或内容异常时回退仓库内快照
+          if ! curl -fsSL --retry 2 --retry-delay 5 "$REFERENCE_INDEX" -o work/index.json; then
+            echo "::warning::参考索引下载失败，使用 reference/index.json 快照"
+            cp reference/index.json work/index.json
+          fi
+          if ! node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync("work/index.json", "utf8"));
+            if (d.format !== 1 || !Array.isArray(d.plugins)) process.exit(1);
+          '; then
+            echo "::warning::参考索引格式异常，使用 reference/index.json 快照"
+            cp reference/index.json work/index.json
+          fi
+
+      - name: 恢复转换缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/npm
+            .cache/github
+          # 每天新建一份，同时用 restore-keys 继承最近一次的缓存；
+          # 绝大多数包不会变，热跑通常 1~2 分钟。
+          key: dsh-index-${{ github.run_id }}
+          restore-keys: dsh-index-
+
+      - name: 安装官方校验器
+        run: npm install --prefix .validator --no-save --legacy-peer-deps "$MARKET_INDEX_PKG"
+
+      - name: 转换
+        env:
+          # Git 兜底要读几千个公开仓库的 package.json：内置 token 可能受安装范围限制，
+          # 配一个 classic PAT（public_repo）放到 secrets.GH_PAT 可确保满配额；没配就退回内置 token。
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          node tools/convert.js \
+            --plugins work/plugins.json \
+            --index work/index.json \
+            --cache .cache/npm \
+            --github-cache .cache/github \
+            --github \
+            --concurrency 24 \
+            --out public/index.json \
+            --report public/conversion-report.json
+
+      - name: 官方 parseMarketIndex 校验
+        run: |
+          node tools/validate.js public/index.json \
+            --official .validator/node_modules/@deepseek-ai/dsh-plugin-market-index/lib/index.js
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("public/conversion-report.json", "utf8"));
+            if (r.outputPlugins < 1000) {
+              console.error("输出条数异常（" + r.outputPlugins + "），中止发布");
+              process.exit(1);
+            }
+          '
+
+      - name: 覆盖度检查
+        run: |
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("public/conversion-report.json", "utf8"));
+            if (!r.bySourceType.git) console.log("::warning::Git 兜底为 0，确认 github.token 能否读取跨仓库数据");
+            if (r.dropped > r.outputPlugins) console.log(`::warning::丢弃 ${r.dropped} 条，多于输出 ${r.outputPlugins} 条，检查上游字段是否变化`);
+          '
+
+      - name: 生成 meta.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const r = JSON.parse(fs.readFileSync("public/conversion-report.json", "utf8"));
+            const up = JSON.parse(fs.readFileSync("work/plugins.json", "utf8"));
+            const meta = {
+              name: "dsh-market-index",
+              upstream: "https://github.com/2BingLing/dsh-market",
+              upstreamGeneratedAt: up.generatedAt,
+              generatedAt: r.generatedAt,
+              format: 1,
+              plugins: r.outputPlugins,
+              sourceTypes: r.bySourceType,
+              indexUrl: `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/market/index.json`,
+              converter: "tools/convert.js"
+            };
+            fs.writeFileSync("public/meta.json", JSON.stringify(meta, null, 2) + "\n");
+            console.log(JSON.stringify(meta, null, 2));
+          '
+
+      # 不碰 master，避免和上游每日数据提交打架；产物单独放 market 分支。
+      # 用临时仓库推送，绕开 sparse checkout 的工作区限制。
+      - name: 发布到 market 分支
+        run: |
+          auth_header=$(git config --get http.https://github.com/.extraheader || true)
+          rm -rf .publish && mkdir .publish && cd .publish
+          git init -q
+          git config user.name "dsh-index-bot"
+          git config user.email "dsh-index-bot@users.noreply.github.com"
+          if [ -n "$auth_header" ]; then
+            git config http.https://github.com/.extraheader "$auth_header"
+          fi
+          git checkout -q -b market
+          cp ../public/index.json ../public/conversion-report.json ../public/meta.json .
+          git add index.json conversion-report.json meta.json
+          git commit -q -m "index: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git push -q --force origin market
+
+      - name: 写入 Job Summary
+        if: always()
+        run: |
+          {
+            echo "## DSH 插件索引构建"
+            echo ""
+            echo "- 索引地址: \`https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/market/index.json\`"
+            echo "- 上游: [2BingLing/dsh-market](https://github.com/2BingLing/dsh-market)（每日 03:00 / 06:00 北京时间更新）"
+            if [ -f public/meta.json ]; then
+              echo ""
+              echo '```json'
+              cat public/meta.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 失败时保留现场
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-debug
+          path: |
+            public/conversion-report.json
+            public/meta.json
+          retention-days: 7
+          if-no-files-found: ignore
