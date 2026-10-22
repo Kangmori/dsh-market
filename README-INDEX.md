@@ -59,7 +59,7 @@ fork 默认不会自动跑 workflow：打开 fork 的 **Actions** 标签页，�
 
 然后到 **Settings → Actions → General → Workflow permissions**，选 **Read and write permissions** 并保存。默认的只读 token 无法向 `market` 分支 push；这一项只需设置一次。
 
-推荐再加一个 **classic PAT**（只需要 `public_repo`）放到 **Settings → Secrets and variables → Actions → New repository secret**，名字 `GH_PAT`。转换器的 Git 兜底需要读约 3,300 个公开仓库的 `package.json`，用内置 `github.token` 可能受安装范围限制；配上 PAT 后走完整的 5,000 点/小时配额，没配也会退回内置 token（报告里 `bySourceType.git` 会变小）。
+推荐再加一个 **classic PAT**（只需要 `public_repo`）放到 **Settings → Secrets and variables → Actions → New repository secret**，名字 `GH_PAT`。转换器的 Git 兜底要读约 3,300 个公开仓库的 `package.json`；实测内置 `github.token` 可以读跨仓库数据（本次构建 Git 来源 2,785 条），所以 PAT 不是必需，只在 `bySourceType.git` 异常为 0 时再补。
 
 ### 4. 关掉上游自带的工作流（重要）
 
