@@ -25,8 +25,11 @@ https://raw.githubusercontent.com/<你的账号>/dsh-market/market/index.json
 .github/workflows/build-dsh-index.yml   # 每日构建
 tools/convert.js                        # 转换器（无第三方依赖）
 tools/validate.js                       # 校验器（可选调用官方 parser）
+tools/render-market-readme.js           # 生成 market 分支的 README（统计随构建刷新）
 reference/index.json                    # 参考索引快照（npm 身份 + 分类训练集）
 ```
+
+每天构建会向 `market` 分支发布四个文件：`index.json`、`meta.json`、`conversion-report.json`、`README.md`。README 由 `tools/render-market-readme.js` 读取本次构建统计生成，不要手改 `market` 分支。
 
 其余文件（`plugins.json`、`index.json`、`conversion-report.json`、`REPORT.md`）不需要放进 fork。
 
