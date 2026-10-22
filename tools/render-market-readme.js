@@ -57,6 +57,13 @@ ${meta.indexUrl}
 https://cdn.jsdelivr.net/gh/${process.env.GITHUB_REPOSITORY ?? 'Kangmori/dsh-market'}@market/index.json
 \`\`\`
 
+自检：
+
+\`\`\`bash
+curl -I ${meta.indexUrl}          # 200，且没有 Location（不能是 302）
+curl -s  ${meta.indexUrl.replace('index.json', 'meta.json')}   # 看本次构建时间与条数
+\`\`\`
+
 ## 当前构建
 
 | 项目 | 值 |
@@ -103,11 +110,40 @@ https://cdn.jsdelivr.net/gh/${process.env.GITHUB_REPOSITORY ?? 'Kangmori/dsh-mar
 - **收录范围**：只保留能证明来源的插件；无法解析 npm/git 的条目会被丢弃，原因见 \`conversion-report.json\`。
 - **无签名**：索引内容来自第三方目录与公开 registry，是市场的声明，不构成安装背书；装什么以安装清单为准。
 
+## 常见问题
+
+**为什么条数比上游 13,840 少？**
+format 1 要求每条插件有可安装的 npm/git 来源和版本。上游目录里有 5,239 条解析不出 npm 包、也没有自指仓库的 git 安装命令（其中约 55% 是 0 star 的抓取噪声），这些会被丢弃；明细见 \`conversion-report.json\`。
+
+**版本为什么和我本地看到的不一样？**
+npm 来源取构建时刻的 \`dist-tags.latest\`，每天会变；git 来源固定到构建时默认分支的 commit，不会漂移。
+
+**为什么有些插件是 git 来源？**
+仓库没有发布 npm 包，但安装命令明确写了 \`github:<自己>\`。构建会读 \`HEAD:package.json\` 拿版本、把 commit 固定下来，安装时走 \`git+https://github.com/...#<commit>\`。
+
+**为什么分类是 other？**
+分类是规则 + 标签统计推断的，拿不准就归 \`other\`（当前约 13%），不影响安装，只影响筛选体验。
+
+**DSH 里多久能看到更新？**
+上游 03:00 / 06:00（北京时间）更新，本索引 08:30 构建；raw CDN 缓存 5 分钟，DSH 自身缓存 10 分钟。
+
+**可以用 jsDelivr 吗？**
+可以，但它对分支文件的缓存可能到 12 小时，且不保证与 raw 同步；急用走 raw。
+
 ## 来源与许可
 
 - 上游目录：[2BingLing/dsh-market](${meta.upstream})（MIT；\`dsh.market\` 名称、logo、域名为保留的品牌资产）。
 - 转换代码：[master 分支](${repoUrl})，MIT。
 - 本分支只包含生成产物，不代表上游作者立场，也不使用 \`dsh.market\` 品牌。
+
+<details>
+<summary>English</summary>
+
+A daily-generated plugin market index (DSH format 1) built from [2BingLing/dsh-market](${meta.upstream})'s \`plugins.json\`. It currently lists **${meta.plugins.toLocaleString('en-US')} plugins** (${npmCount.toLocaleString('en-US')} npm, ${gitCount.toLocaleString('en-US')} git) and is validated with DSH's official \`parseMarketIndex\`.
+
+Add the raw URL above as a market index source in DSH. This branch is generated output: the converter and workflow live on [master](${repoUrl}). Do not edit files here by hand — every build force-pushes a fresh commit.
+
+</details>
 `;
 
 fs.writeFileSync('public/README.md', readme);
