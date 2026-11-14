@@ -1,0 +1,14 @@
+{
+  "name": "dsh-market-index",
+  "upstream": "https://github.com/2BingLing/dsh-market",
+  "upstreamGeneratedAt": "2026-11-14T00:28:03.749Z",
+  "generatedAt": "2026-11-14T06:48:10.101Z",
+  "format": 1,
+  "plugins": 11825,
+  "sourceTypes": {
+    "git": 4343,
+    "npm": 7482
+  },
+  "indexUrl": "https://raw.githubusercontent.com/Kangmori/dsh-market/market/index.json",
+  "converter": "tools/convert.js"
+}
