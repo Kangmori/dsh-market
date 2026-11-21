@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-11-21T07:28:59.909Z",
+  "sources": {
+    "plugins": "work/plugins.json",
+    "index": "work/index.json"
+  },
+  "inputPlugins": 23439,
+  "considered": 23439,
+  "resolved": 13950,
+  "dropped": 9489,
+  "duplicates": 1009,
+  "outputPlugins": 12941,
+  "bySource": {
+    "index": 4277,
+    "github-git": 5248,
+    "command": 2328,
+    "homepage": 188,
+    "guess": 1805,
+    "github-npm": 89,
+    "readme": 15
+  },
+  "bySourceType": {
+    "git": 4735,
+    "npm": 8206
+  },
+  "byCategory": {
+    "ui": 2523,
+    "other": 1574,
+    "tools": 1222,
+    "session": 1169,
+    "model": 799,
+    "usage": 655,
+    "workflow": 551,
+    "memory": 463,
+    "dev": 434,
+    "theme": 398,
+    "remote": 375,
+    "skill": 369,
+    "security": 352,
+    "notify": 312,
+    "fun": 304,
+    "browser": 271,
+    "vision": 236,
+    "docs": 220,
+    "voice": 207,
+    "identity": 163,
+    "git": 156,
+    "market": 131,
+    "agi": 50,
+    "wsl": 7
+  },
+  "otherCategory": 1574,
+  "npmRequests": 560,
+  "npmFailures": 0,
+  "outputBytes": 10475292,
+  "seconds": 11.099,
+  "droppedReasons": {
+    "npm-package-not-found": 2710,
+    "git-or-tarball-only": 590,
+    "no-install-command": 6189
+  }
+}
